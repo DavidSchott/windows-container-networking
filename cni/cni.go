@@ -107,7 +107,7 @@ type OptionalFlags struct {
 	LocalRoutePortMapping bool `json:"localRoutedPortMapping"`
 	AllowAclPortMapping   bool `json:"allowAclPortMapping"`
 	ForceBridgeGateway    bool `json:"forceBridgeGateway"` // Intended to be temporary workaround
-
+	LoopbackDSR           bool `json:"loopbackDSR"`
 }
 
 func (r *Result) Print() {
@@ -192,7 +192,7 @@ func (config *NetworkConfig) Serialize() []byte {
 }
 
 // GetNetworkInfo from the NetworkConfig
-func (config *NetworkConfig) GetNetworkInfo(podNamespace string) *network.NetworkInfo {
+func (config *NetworkConfig) GetNetworkInfo(podNamespace string) (ninfo *network.NetworkInfo, err error) {
 	var subnets []network.SubnetInfo
 	if config.Ipam.Subnet != "" {
 		ip, s, _ := net.ParseCIDR(config.Ipam.Subnet)
@@ -233,7 +233,7 @@ func (config *NetworkConfig) GetNetworkInfo(podNamespace string) *network.Networ
 		dnsSettings.Options = config.RuntimeConfig.DNS.Options
 	}
 
-	ninfo := &network.NetworkInfo{
+	ninfo = &network.NetworkInfo{
 		ID:            config.Name,
 		Name:          config.Name,
 		Type:          network.NetworkType(config.Name),
@@ -249,8 +249,13 @@ func (config *NetworkConfig) GetNetworkInfo(podNamespace string) *network.Networ
 			}
 		}
 	}
+	if config.OptionalFlags.LoopbackDSR {
+		if err := hcn.DSRSupported(); err != nil {
+			return nil, err
+		}
+	}
 
-	return ninfo
+	return
 }
 
 // getInACLRule generates an In ACLs for mapped ports

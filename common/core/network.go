@@ -7,11 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/Microsoft/windows-container-networking/cni"
 	"github.com/Microsoft/windows-container-networking/common"
 	"github.com/Microsoft/windows-container-networking/network"
 	"github.com/sirupsen/logrus"
-	"os"
 
 	"github.com/Microsoft/hcsshim/hcn"
 	"github.com/containernetworking/cni/pkg/invoke"
@@ -111,7 +112,11 @@ func (plugin *netPlugin) Add(args *cniSkel.CmdArgs) (resultError error) {
 
 	// Convert cniConfig to NetworkInfo
 	// We don't set namespace, setting namespace is not valid for EP creation
-	networkInfo := cniConfig.GetNetworkInfo(k8sNamespace)
+	networkInfo, err := cniConfig.GetNetworkInfo(k8sNamespace)
+	if err != nil {
+		logrus.Errorf("[cni-net] Failed to get network information from network configuration, err:%v.", err)
+		return err
+	}
 	epInfo, err := cniConfig.GetEndpointInfo(networkInfo, args.ContainerID, "")
 
 	if err != nil {
@@ -174,6 +179,12 @@ func (plugin *netPlugin) Add(args *cniSkel.CmdArgs) (resultError error) {
 
 	// Apply the Network Policy for Endpoint
 	epInfo.Policies = append(epInfo.Policies, networkInfo.Policies...)
+
+	// If LoopbackDSR is set, add to policies
+	if cniConfig.OptionalFlags.LoopbackDSR {
+		hcnLoopbackRoute, _ := network.GetLoopbackDSRPolicy(&epInfo.IPAddress)
+		epInfo.Policies = append(epInfo.Policies, hcnLoopbackRoute)
+	}
 
 	epInfo, err = plugin.nm.CreateEndpoint(nwConfig.ID, epInfo, args.Netns)
 	if err != nil {
@@ -302,7 +313,11 @@ func (plugin *netPlugin) Delete(args *cniSkel.CmdArgs) error {
 	}
 
 	// Convert cniConfig to NetworkInfo
-	networkInfo := cniConfig.GetNetworkInfo(k8sNamespace)
+	networkInfo, err := cniConfig.GetNetworkInfo(k8sNamespace)
+	if err != nil {
+		logrus.Errorf("[cni-net] Failed to get network information from network configuration, err:%v.", err)
+		return err
+	}
 	epInfo, err := cniConfig.GetEndpointInfo(networkInfo, args.ContainerID, args.Netns)
 	if err != nil {
 		return err
